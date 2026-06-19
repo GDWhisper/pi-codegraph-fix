@@ -2,6 +2,8 @@
 
 [CodeGraph](https://colbymchenry.github.io/codegraph/) MCP sidecar for the [pi coding agent](https://github.com/earendil-works/pi).
 
+[中文版](README.zh.md)
+
 Fixes the core problem that caused low codegraph adoption: **`process.cwd()` lock-in**.
 
 ## The Fix
@@ -53,8 +55,6 @@ pi install github:GDWhisper/pi-codegraph-fix
   "packages": ["github:GDWhisper/pi-codegraph-fix"]
 }
 ```
-
-[中文版](README.zh.md)
 
 ## Requirements
 

@@ -2,6 +2,8 @@
 
 [CodeGraph](https://colbymchenry.github.io/codegraph/) MCP sidecar 插件，用于 [pi coding agent](https://github.com/earendil-works/pi)。
 
+[English](README.md)
+
 修复了导致 codegraph 调用率低的根本问题：**`process.cwd()` 锁定**。
 
 ## 修复了什么
@@ -53,8 +55,6 @@ pi install github:GDWhisper/pi-codegraph-fix
   "packages": ["github:GDWhisper/pi-codegraph-fix"]
 }
 ```
-
-[English](README.md)
 
 ## 依赖
 
