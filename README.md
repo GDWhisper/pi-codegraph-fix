@@ -54,6 +54,8 @@ pi install github:GDWhisper/pi-codegraph-fix
 }
 ```
 
+[中文版](README.zh.md)
+
 ## Requirements
 
 - [CodeGraph](https://colbymchenry.github.io/codegraph/) CLI (`npm install -g @colbymchenry/codegraph`)
