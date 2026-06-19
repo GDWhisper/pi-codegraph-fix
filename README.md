@@ -2,7 +2,7 @@
 
 [CodeGraph](https://colbymchenry.github.io/codegraph/) MCP sidecar for the [pi coding agent](https://github.com/earendil-works/pi).
 
-Fixes the core problem that caused low codegraph adoption: **`process.cwd()`锁定**。
+Fixes the core problem that caused low codegraph adoption: **`process.cwd()` lock-in**.
 
 ## The Fix
 
@@ -11,20 +11,20 @@ Both [colbymchenry/codegraph-pi](https://github.com/colbymchenry/codegraph-pi) a
 ```typescript
 const dbPath = join(process.cwd(), ".codegraph", "codegraph.db");
 //                ^^^^^^^^^^^^^
-//                始终是 pi 进程启动目录，不是 session 工作目录
+//                always points to where pi was launched, not the current session
 ```
 
 When you loaded a session from a different project (`pi session=<id>`), or when `pi` was launched from `~` instead of the project root, the DB file was never found → no codegraph tools were registered → 0% call rate.
 
-**Fix:** Use `ctx.cwd` from `session_start` event:
+**Fix:** Use `ctx.cwd` from the `session_start` event:
 
 ```typescript
 const projectRoot = ctx.cwd || process.cwd();
 //                ^^^^^^^
-//                当前 session 的工作目录，由 pi 提供
+//                the current session's working directory, provided by pi
 ```
 
-Plus: pass `cwd: projectRoot` when spawning `codegraph serve --mcp` so the subprocess also sees the correct project root.
+Plus: pass `cwd: projectRoot` when spawning `codegraph serve --mcp` so the subprocess also resolves the correct project root.
 
 ## Features
 
@@ -35,22 +35,22 @@ Plus: pass `cwd: projectRoot` when spawning `codegraph serve --mcp` so the subpr
 | Multi-project MCP clients (one per CWD) | SeanPedersen/pi-codegraph |
 | Dynamic tool discovery via MCP `tools/list` | SeanPedersen/pi-codegraph |
 | Process cleanup hooks (exit, SIGTERM, SIGHUP) | SeanPedersen/pi-codegraph |
-| Self-contained single file (no separate mcp-client.ts) | SeanPedersen/pi-codegraph |
+| Self-contained single file | SeanPedersen/pi-codegraph |
 | `before_agent_start` system prompt injection (no APPEND_SYSTEM.md side effect) | colbymchenry/codegraph-pi |
-| `.codegraph/codegraph.db` check (not just `.codegraph/` dir) | colbymchenry/codegraph-pi |
+| `.codegraph/codegraph.db` exact check (not just `.codegraph/` dir) | colbymchenry/codegraph-pi |
 
 ## Install
 
 ```bash
-# Via local path (clone or copy)
-pi install /path/to/pi-codegraph-fix
+# pi install (from GitHub)
+pi install github:GDWhisper/pi-codegraph-fix
 
-# Or reference in ~/.pi/agent/settings.json
+# Or via settings.json
 ```
 
 ```json
 {
-  "packages": ["/path/to/pi-codegraph-fix"]
+  "packages": ["github:GDWhisper/pi-codegraph-fix"]
 }
 ```
 
@@ -67,3 +67,8 @@ pi install /path/to/pi-codegraph-fix
 4. Registers all tools with `pi.registerTool()`
 5. Injects usage instructions into system prompt via `before_agent_start`
 6. On `session_shutdown` or process exit, cleans up all MCP clients
+
+## Credits
+
+- [colbymchenry/codegraph-pi](https://github.com/colbymchenry/codegraph-pi) — original pi extension
+- [SeanPedersen/pi-codegraph](https://github.com/SeanPedersen/pi-codegraph) — multi-client architecture
