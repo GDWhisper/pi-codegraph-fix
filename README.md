@@ -28,6 +28,32 @@ const projectRoot = ctx.cwd || process.cwd();
 
 Plus: pass `cwd: projectRoot` when spawning `codegraph serve --mcp` so the subprocess also resolves the correct project root.
 
+## Why Cleanup Matters
+
+Without proper lifecycle management, `codegraph serve --mcp` processes accumulate as zombies:
+
+```
+pi start → spawns codegraph serve --mcp (PID A)
+pi exit  → PID A NOT killed → zombie
+pi start → spawns codegraph serve --mcp (PID B)  
+pi exit  → PID B NOT killed → zombie
+...
+→ 12+ accumulated processes competing for daemon lock
+→ daemon socket contention → "server disconnected" errors
+```
+
+**Root cause:** `codegraph-pi` (original) and `pi-codegraph` both lacked process cleanup — MCP server subprocesses were spawned but never killed on session exit.
+
+**Fix:** Three-path cleanup ensures zero accumulation:
+
+| Path | Trigger | Effect |
+|------|---------|--------|
+| `session_shutdown` | pi exits normally | `destroy()` all clients |
+| `process.once("exit")` | Node process exit | `destroy()` all clients |
+| `SIGTERM` / `SIGHUP` | Terminal close, kill signal | `destroy()` then re-raise signal |
+
+Real-world verification: on a system with 12 zombie `codegraph serve --mcp` processes accumulated over 9+ hours across 6 sessions, switching to `pi-codegraph-fix` and restarting eliminates all zombies within one session lifecycle.
+
 ## Features
 
 | Feature | Source |

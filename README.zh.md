@@ -28,6 +28,32 @@ const projectRoot = ctx.cwd || process.cwd();
 
 同时：`spawn("codegraph serve --mcp")` 传入 `cwd: projectRoot`，确保子进程也看到正确的项目根。
 
+## 为什么清理很重要
+
+缺少生命周期管理时，`codegraph serve --mcp` 进程会像僵尸一样累积：
+
+```
+pi 启动 → 启动 codegraph serve --mcp (PID A)
+pi 退出 → PID A 未被 kill → 僵尸
+pi 启动 → 启动 codegraph serve --mcp (PID B)
+pi 退出 → PID B 未被 kill → 僵尸
+...
+→ 12+ 个进程争抢 daemon 锁
+→ daemon socket 竞争 → "server disconnected" 错误
+```
+
+**根因：** 原版 `codegraph-pi` 和 `pi-codegraph` 均缺少进程清理——MCP server 子进程被启动但从未在 session 退出时被 kill。
+
+**修复：** 三路径清理确保零残留：
+
+| 路径 | 触发时机 | 效果 |
+|------|----------|------|
+| `session_shutdown` | pi 正常退出 | `destroy()` 所有客户端 |
+| `process.once("exit")` | Node 进程退出 | `destroy()` 所有客户端 |
+| `SIGTERM` / `SIGHUP` | 终端关闭、kill 信号 | `destroy()` 后重新抛出信号 |
+
+实测验证：在 12 个僵尸进程累积超过 9 小时、跨越 6 个 session 的系统上，切换至 `pi-codegraph-fix` 并重启后，一个 session 生命周期内即可消除所有僵尸。
+
 ## 特性一览
 
 | 特性 | 来源 |
