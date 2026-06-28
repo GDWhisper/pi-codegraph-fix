@@ -70,7 +70,10 @@ pi 退出 → PID B 未被 kill → 僵尸
 ## 安装
 
 ```bash
-# 通过 pi install（从 GitHub）
+# 通过 pi install（从 npm — 推荐）
+pi install npm:pi-codegraph-fix
+
+# 或从 GitHub
 pi install github:GDWhisper/pi-codegraph-fix
 
 # 或添加到 settings.json
@@ -78,7 +81,7 @@ pi install github:GDWhisper/pi-codegraph-fix
 
 ```json
 {
-  "packages": ["github:GDWhisper/pi-codegraph-fix"]
+  "packages": ["npm:pi-codegraph-fix"]
 }
 ```
 

@@ -70,7 +70,10 @@ Real-world verification: on a system with 12 zombie `codegraph serve --mcp` proc
 ## Install
 
 ```bash
-# pi install (from GitHub)
+# pi install (from npm — recommended)
+pi install npm:pi-codegraph-fix
+
+# Or from GitHub
 pi install github:GDWhisper/pi-codegraph-fix
 
 # Or via settings.json
@@ -78,7 +81,7 @@ pi install github:GDWhisper/pi-codegraph-fix
 
 ```json
 {
-  "packages": ["github:GDWhisper/pi-codegraph-fix"]
+  "packages": ["npm:pi-codegraph-fix"]
 }
 ```
 
