@@ -8,6 +8,11 @@
     "type": "git",
     "url": "https://github.com/GDWhisper/pi-codegraph-fix"
   },
+  "files": [
+    "extensions/",
+    "README.md",
+    "README.zh.md"
+  ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
