@@ -1,8 +1,14 @@
 {
   "name": "pi-codegraph-fix",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pi coding agent extension that wires codegraph as an MCP sidecar — with ctx.cwd fix for cross-project sessions",
-  "keywords": ["pi-package", "codegraph", "code-intelligence", "mcp", "knowledge-graph"],
+  "keywords": [
+    "pi-package",
+    "codegraph",
+    "code-intelligence",
+    "mcp",
+    "knowledge-graph"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,6 +27,8 @@
     "typebox": "*"
   },
   "pi": {
-    "extensions": ["./extensions/index.ts"]
+    "extensions": [
+      "./extensions/index.ts"
+    ]
   }
 }
