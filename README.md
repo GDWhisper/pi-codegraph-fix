@@ -1,58 +1,56 @@
 # pi-codegraph-fix
 
-[CodeGraph](https://colbymchenry.github.io/codegraph/) MCP sidecar for the [pi coding agent](https://github.com/earendil-works/pi).
+The CodeGraph plugin for pi that actually works.
 
 [中文版](README.zh.md)
 
-Fixes the core problem that caused low codegraph adoption: **`process.cwd()` lock-in**.
+---
+
+**Two problems, one fix.** Original CodeGraph plugins for pi break silently when you switch projects, and leave zombie processes piling up. This fork fixes both.
+
+## Quick Install
+
+```bash
+pi install npm:pi-codegraph-fix
+```
+
+That's it. You also need CodeGraph CLI (`npm install -g @colbymchenry/codegraph`) and your project indexed (`codegraph init`).
+
+---
+
+## The Problems
+
+### 1. CodeGraph goes silent when you switch projects
+
+You `pi session=<other-project>` or launch pi from `~` instead of your project root. Suddenly codegraph tools disappear. No error, just nothing.
+
+**Why:** The original plugin used `process.cwd()` to find `.codegraph/codegraph.db`. That always points to wherever pi was first launched — not your current session's project. Wrong project → no DB → no tools → silent failure.
+
+### 2. Zombie process pile-up
+
+Every time you close pi, the `codegraph serve --mcp` subprocess doesn't die. After a few sessions you have a dozen of them fighting over the same socket — causing "server disconnected" errors on every codegraph call.
+
+Real case: 12 zombie processes accumulated over 9 hours across 6 sessions. Every codegraph call spun the roulette wheel on which zombie had the socket lock.
+
+---
 
 ## The Fix
 
-Both [colbymchenry/codegraph-pi](https://github.com/colbymchenry/codegraph-pi) and [SeanPedersen/pi-codegraph](https://github.com/SeanPedersen/pi-codegraph) used `process.cwd()` to locate `.codegraph/codegraph.db`:
+Two changes from the originals ([codegraph-pi](https://github.com/colbymchenry/codegraph-pi), [pi-codegraph](https://github.com/SeanPedersen/pi-codegraph)):
 
-```typescript
-const dbPath = join(process.cwd(), ".codegraph", "codegraph.db");
-//                ^^^^^^^^^^^^^
-//                always points to where pi was launched, not the current session
-```
+**`ctx.cwd` instead of `process.cwd()`** — reads the current session's working directory from pi, so it works no matter where or how you launched pi.
 
-When you loaded a session from a different project (`pi session=<id>`), or when `pi` was launched from `~` instead of the project root, the DB file was never found → no codegraph tools were registered → 0% call rate.
+**Three-path cleanup** — kills the MCP subprocess on normal exit, crash, or terminal close:
 
-**Fix:** Use `ctx.cwd` from the `session_start` event:
+| Path | When | 
+|------|------|
+| `session_shutdown` | pi exits normally |
+| `process.once("exit")` | Node process ends |
+| `SIGTERM` / `SIGHUP` | Terminal close, kill |
 
-```typescript
-const projectRoot = ctx.cwd || process.cwd();
-//                ^^^^^^^
-//                the current session's working directory, provided by pi
-```
+No more zombies. No more "server disconnected".
 
-Plus: pass `cwd: projectRoot` when spawning `codegraph serve --mcp` so the subprocess also resolves the correct project root.
-
-## Why Cleanup Matters
-
-Without proper lifecycle management, `codegraph serve --mcp` processes accumulate as zombies:
-
-```
-pi start → spawns codegraph serve --mcp (PID A)
-pi exit  → PID A NOT killed → zombie
-pi start → spawns codegraph serve --mcp (PID B)  
-pi exit  → PID B NOT killed → zombie
-...
-→ 12+ accumulated processes competing for daemon lock
-→ daemon socket contention → "server disconnected" errors
-```
-
-**Root cause:** `codegraph-pi` (original) and `pi-codegraph` both lacked process cleanup — MCP server subprocesses were spawned but never killed on session exit.
-
-**Fix:** Three-path cleanup ensures zero accumulation:
-
-| Path | Trigger | Effect |
-|------|---------|--------|
-| `session_shutdown` | pi exits normally | `destroy()` all clients |
-| `process.once("exit")` | Node process exit | `destroy()` all clients |
-| `SIGTERM` / `SIGHUP` | Terminal close, kill signal | `destroy()` then re-raise signal |
-
-Real-world verification: on a system with 12 zombie `codegraph serve --mcp` processes accumulated over 9+ hours across 6 sessions, switching to `pi-codegraph-fix` and restarting eliminates all zombies within one session lifecycle.
+---
 
 ## Features
 
@@ -64,36 +62,13 @@ Real-world verification: on a system with 12 zombie `codegraph serve --mcp` proc
 | Dynamic tool discovery via MCP `tools/list` | SeanPedersen/pi-codegraph |
 | Process cleanup hooks (exit, SIGTERM, SIGHUP) | SeanPedersen/pi-codegraph |
 | Self-contained single file | SeanPedersen/pi-codegraph |
-| `before_agent_start` system prompt injection (no APPEND_SYSTEM.md side effect) | colbymchenry/codegraph-pi |
-| `.codegraph/codegraph.db` exact check (not just `.codegraph/` dir) | colbymchenry/codegraph-pi |
+| `before_agent_start` system prompt injection | colbymchenry/codegraph-pi |
+| `.codegraph/codegraph.db` exact check | colbymchenry/codegraph-pi |
 
-## Install
-
-```bash
-# pi install (from npm — recommended)
-pi install npm:pi-codegraph-fix
-
-# Or from GitHub
-pi install github:GDWhisper/pi-codegraph-fix
-
-# Or via settings.json
-```
-
-```json
-{
-  "packages": ["npm:pi-codegraph-fix"]
-}
-```
-
-## Requirements
-
-- [CodeGraph](https://colbymchenry.github.io/codegraph/) CLI (`npm install -g @colbymchenry/codegraph`)
-- Project must be indexed: `codegraph init` in project root
-
-## How it works
+## How It Works
 
 1. On `session_start`, checks `ctx.cwd/.codegraph/codegraph.db` exists
-2. Spawns `codegraph serve --mcp` as a subprocess with `cwd: projectRoot`
+2. Spawns `codegraph serve --mcp` with `cwd: projectRoot`
 3. Discovers available tools via MCP `tools/list`
 4. Registers all tools with `pi.registerTool()`
 5. Injects usage instructions into system prompt via `before_agent_start`
