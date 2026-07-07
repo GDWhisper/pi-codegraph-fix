@@ -44,11 +44,9 @@ pi install npm:pi-codegraph-fix
 
 ## 怎么修的
 
-相比原版（[codegraph-pi](https://github.com/colbymchenry/codegraph-pi)、[pi-codegraph](https://github.com/SeanPedersen/pi-codegraph)），改了两处：
-
 **`ctx.cwd` 替代 `process.cwd()`** — 从 pi 获取当前 session 的工作目录，不管你怎么启动、在哪启动都能找到正确项目。
 
-**三路径清理** — 正常退出、进程崩溃、终端关闭都会杀掉 MCP 子进程：
+**三路清理** — 正常退出、进程崩溃、终端关闭都会杀掉 MCP 子进程：
 
 | 路径 | 触发时机 |
 |------|----------|
@@ -58,30 +56,48 @@ pi install npm:pi-codegraph-fix
 
 没有僵尸，没有断连报错。
 
----
-
-## 特性一览
-
-| 特性 | 来源 |
-|------|------|
-| `ctx.cwd` 替代 `process.cwd()` | **pi-codegraph-fix** |
-| `spawn` 指定 `cwd` | **pi-codegraph-fix** |
-| 多项目 MCP 客户端（每项目独立连接） | SeanPedersen/pi-codegraph |
-| 动态工具发现（MCP 协议） | SeanPedersen/pi-codegraph |
-| 进程退出/终止信号时自动清理 | SeanPedersen/pi-codegraph |
-| 单一文件，无外部依赖 | SeanPedersen/pi-codegraph |
-| 智能注入 system prompt | colbymchenry/codegraph-pi |
-| 检查 codegraph DB 是否存在后才启动 | colbymchenry/codegraph-pi |
-
 ## 工作原理
 
 1. 会话启动时检查当前项目是否存在 codegraph 索引（仅一次文件检查）
 2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞）
-3. 工具就绪后动态注册为 pi 原生工具
-4. 注册完成后注入使用说明到系统提示
-5. 会话关闭或进程退出时清理所有 MCP 客户端
+3. 通过 MCP `tools/list` 协议动态发现可用工具
+4. 注册为 pi 原生工具
+5. 工具就绪后注入使用说明到系统提示
+6. 会话关闭或进程退出时清理所有 MCP 客户端
+
+---
+
+## 与上游的差异
+
+本项目基于两个早期项目改进。两个上游都有一个相同的核心 bug：用 `process.cwd()` 导致切项目时工具失效，而且都没正确处理子进程清理。
+
+### Bug 修复
+
+| Bug | 上游来源 | 本 fork 修复 |
+|-----|---------|-------------|
+| 切项目后工具消失 | codegraph-pi 和 pi-codegraph 都用 `process.cwd()`——永远指向 pi 启动目录而非当前会话 | `ctx.cwd` 从 pi 读取当前会话的真实工作目录 |
+| 子进程跑错目录 | 同一个根因——codegraph 在错误目录启动 | `spawn` 指定 `cwd: projectRoot` |
+| 退出后残留僵尸进程 | codegraph-pi 完全没有清理；pi-codegraph 清理不完整 | 三路清理：`session_shutdown`、`process.once("exit")`、`SIGTERM`/`SIGHUP` |
+| 无索引时 LLM 仍被告知使用 codegraph | codegraph-pi 无条件注入系统提示 | 工具就绪后才注入使用说明 |
+
+### 新增优化
+
+| 优化 | 作用 |
+|------|------|
+| 懒加载连接 | 首次使用才启动 codegraph，不拖慢会话启动 |
+| 智能提示注入 | 等待工具注册后再告知 LLM——不会误导 |
+
+### 继承的特性
+
+| 特性 | 来源 |
+|------|------|
+| 通过 MCP `tools/list` 动态发现工具 | [SeanPedersen/pi-codegraph](https://github.com/SeanPedersen/pi-codegraph) |
+| 多项目 MCP 客户端（每项目独立连接） | SeanPedersen/pi-codegraph |
+| 单文件无外部依赖 | SeanPedersen/pi-codegraph |
+| `before_agent_start` 系统提示注入 | [nosuiyi/codegraph-pi](https://github.com/nosuiyi/codegraph-pi) |
+| `.codegraph/codegraph.db` 精确检查 | nosuiyi/codegraph-pi |
 
 ## 致谢
 
-- [colbymchenry/codegraph-pi](https://github.com/colbymchenry/codegraph-pi) — 原始 pi 扩展
+- [nosuiyi/codegraph-pi](https://github.com/nosuiyi/codegraph-pi) — 原始 pi 扩展
 - [SeanPedersen/pi-codegraph](https://github.com/SeanPedersen/pi-codegraph) — 多客户端架构
