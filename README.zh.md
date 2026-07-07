@@ -11,10 +11,10 @@
 ## 特性
 
 - **跨项目不失效** — 用 `ctx.cwd` 而非 `process.cwd()`，切项目不丢 codegraph 工具
-- **零僵尸进程** — session_shutdown + exit + SIGTERM/SIGHUP 三路清理
-- **懒加载启动** — MCP 进程在首次使用时后台启动，`session_start` 不阻塞
-- **多项目支持** — 每个项目独立 MCP 连接，跨项目 session 自动切换
-- **智能提示注入** — 工具就绪后才注入 CodeGraph 使用说明，无索引不误导
+- **零僵尸进程** — 会话关闭/进程退出/终止信号三路清理，不留后患
+- **懒加载启动** — 首次调用工具时才启动 codegraph 进程，不拖慢会话启动
+- **多项目支持** — 每个项目独立 MCP 连接，跨项目会话自动切换
+- **智能提示注入** — 工具就绪后才注入使用说明，无索引不误导
 
 ## 快速安装
 
@@ -66,20 +66,20 @@ pi install npm:pi-codegraph-fix
 |------|------|
 | `ctx.cwd` 替代 `process.cwd()` | **pi-codegraph-fix** |
 | `spawn` 指定 `cwd` | **pi-codegraph-fix** |
-| 多项目 MCP 客户端（每个 CWD 独立） | SeanPedersen/pi-codegraph |
-| 动态工具发现（MCP `tools/list`） | SeanPedersen/pi-codegraph |
-| 进程清理钩子（exit, SIGTERM, SIGHUP） | SeanPedersen/pi-codegraph |
+| 多项目 MCP 客户端（每项目独立连接） | SeanPedersen/pi-codegraph |
+| 动态工具发现（MCP 协议） | SeanPedersen/pi-codegraph |
+| 进程退出/终止信号时自动清理 | SeanPedersen/pi-codegraph |
 | 单一文件，无外部依赖 | SeanPedersen/pi-codegraph |
-| `before_agent_start` 注入 system prompt | colbymchenry/codegraph-pi |
-| `.codegraph/codegraph.db` 精确检查 | colbymchenry/codegraph-pi |
+| 智能注入 system prompt | colbymchenry/codegraph-pi |
+| 检查 codegraph DB 是否存在后才启动 | colbymchenry/codegraph-pi |
 
 ## 工作原理
 
-1. `session_start` 时检查 `ctx.cwd/.codegraph/codegraph.db` 是否存在（瞬时操作）
-2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞 session）
-3. 工具就绪后通过 `pi.registerTool()` 动态注册所有 MCP 工具
-4. 注册完成后通过 `before_agent_start` 注入 CodeGraph 使用说明
-5. `session_shutdown` 或进程退出时清理所有 MCP 客户端
+1. 会话启动时检查当前项目是否存在 codegraph 索引（仅一次文件检查）
+2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞）
+3. 工具就绪后动态注册为 pi 原生工具
+4. 注册完成后注入使用说明到系统提示
+5. 会话关闭或进程退出时清理所有 MCP 客户端
 
 ## 致谢
 
