@@ -10,11 +10,11 @@ The CodeGraph plugin for pi that actually works.
 
 ## Features
 
-- **跨项目不失效** — 用 `ctx.cwd` 而非 `process.cwd()`，切项目不丢 codegraph 工具
-- **零僵尸进程** — session_shutdown + exit + SIGTERM/SIGHUP 三路清理
-- **懒加载启动** — MCP 进程在首次使用时后台启动，`session_start` 不阻塞
-- **多项目支持** — 每个项目独立 MCP 连接，跨项目 session 自动切换
-- **智能提示注入** — 工具就绪后才注入 CodeGraph 使用说明，无索引不误导
+- **Cross-project** — uses `ctx.cwd` instead of `process.cwd()`, works when switching projects or launching pi from anywhere
+- **No zombie processes** — triple cleanup on session shutdown, process exit, and SIGTERM/SIGHUP
+- **Lazy startup** — codegraph process spawns on first use, doesn't block session start
+- **Multi-project** — one MCP client per CWD, auto-switches between projects
+- **Smart prompt injection** — only injects CodeGraph usage into system prompt after tools are ready, no misleading hints when there's no index
 
 ## Quick Install
 
@@ -22,7 +22,7 @@ The CodeGraph plugin for pi that actually works.
 pi install npm:pi-codegraph-fix
 ```
 
-需要 CodeGraph CLI（`npm install -g @colbymchenry/codegraph`）和项目索引（`codegraph init`）。
+You also need CodeGraph CLI (`npm install -g @colbymchenry/codegraph`) and your project indexed (`codegraph init`).
 
 ---
 
@@ -75,11 +75,12 @@ No more zombies. No more "server disconnected".
 
 ## How It Works
 
-1. `session_start` 时检查 `ctx.cwd/.codegraph/codegraph.db` 是否存在（瞬时操作）
-2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞 session）
-3. 工具就绪后通过 `pi.registerTool()` 动态注册所有 MCP 工具
-4. 注册完成后通过 `before_agent_start` 注入 CodeGraph 使用说明
-5. `session_shutdown` 或进程退出时清理所有 MCP 客户端
+1. On `session_start`, check if `ctx.cwd/.codegraph/codegraph.db` exists (instant file check)
+2. On first codegraph tool call, spawn `codegraph serve --mcp` in background (lazy, doesn't block session)
+3. Discover available tools via MCP `tools/list` protocol
+4. Register all tools with `pi.registerTool()`
+5. Inject usage instructions into system prompt via `before_agent_start` after tools are ready
+6. On `session_shutdown` or process exit, clean up all MCP clients
 
 ## Credits
 
