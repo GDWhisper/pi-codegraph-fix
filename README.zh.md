@@ -1,12 +1,20 @@
 # pi-codegraph-fix
 
+[![npm](https://img.shields.io/npm/v/pi-codegraph-fix)](https://www.npmjs.com/package/pi-codegraph-fix)
+
 能正常工作的 CodeGraph pi 插件。
 
 [English](README.md)
 
 ---
 
-**两个问题，一个修复。** 原版 CodeGraph 插件在切换项目时悄悄失效，还会残留僵尸进程越积越多。这个 fork 同时解决了这两个问题。
+## 特性
+
+- **跨项目不失效** — 用 `ctx.cwd` 而非 `process.cwd()`，切项目不丢 codegraph 工具
+- **零僵尸进程** — session_shutdown + exit + SIGTERM/SIGHUP 三路清理
+- **懒加载启动** — MCP 进程在首次使用时后台启动，`session_start` 不阻塞
+- **多项目支持** — 每个项目独立 MCP 连接，跨项目 session 自动切换
+- **智能提示注入** — 工具就绪后才注入 CodeGraph 使用说明，无索引不误导
 
 ## 快速安装
 
@@ -14,7 +22,7 @@
 pi install npm:pi-codegraph-fix
 ```
 
-就这一行。你还需要安装 CodeGraph CLI（`npm install -g @colbymchenry/codegraph`）并在项目里建好索引（`codegraph init`）。
+需要 CodeGraph CLI（`npm install -g @colbymchenry/codegraph`）和项目索引（`codegraph init`）。
 
 ---
 
@@ -67,12 +75,11 @@ pi install npm:pi-codegraph-fix
 
 ## 工作原理
 
-1. `session_start` 时检查 `ctx.cwd/.codegraph/codegraph.db` 是否存在
-2. 以 `cwd: projectRoot` 启动 `codegraph serve --mcp` 子进程
-3. 通过 MCP `tools/list` 动态发现可用工具
-4. 全部注册为 pi 工具（`pi.registerTool()`）
-5. 通过 `before_agent_start` 将使用说明注入 system prompt
-6. `session_shutdown` 或进程退出时清理所有 MCP 客户端
+1. `session_start` 时检查 `ctx.cwd/.codegraph/codegraph.db` 是否存在（瞬时操作）
+2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞 session）
+3. 工具就绪后通过 `pi.registerTool()` 动态注册所有 MCP 工具
+4. 注册完成后通过 `before_agent_start` 注入 CodeGraph 使用说明
+5. `session_shutdown` 或进程退出时清理所有 MCP 客户端
 
 ## 致谢
 

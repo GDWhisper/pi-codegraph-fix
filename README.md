@@ -1,12 +1,20 @@
 # pi-codegraph-fix
 
+[![npm](https://img.shields.io/npm/v/pi-codegraph-fix)](https://www.npmjs.com/package/pi-codegraph-fix)
+
 The CodeGraph plugin for pi that actually works.
 
 [中文版](README.zh.md)
 
 ---
 
-**Two problems, one fix.** Original CodeGraph plugins for pi break silently when you switch projects, and leave zombie processes piling up. This fork fixes both.
+## Features
+
+- **跨项目不失效** — 用 `ctx.cwd` 而非 `process.cwd()`，切项目不丢 codegraph 工具
+- **零僵尸进程** — session_shutdown + exit + SIGTERM/SIGHUP 三路清理
+- **懒加载启动** — MCP 进程在首次使用时后台启动，`session_start` 不阻塞
+- **多项目支持** — 每个项目独立 MCP 连接，跨项目 session 自动切换
+- **智能提示注入** — 工具就绪后才注入 CodeGraph 使用说明，无索引不误导
 
 ## Quick Install
 
@@ -14,7 +22,7 @@ The CodeGraph plugin for pi that actually works.
 pi install npm:pi-codegraph-fix
 ```
 
-That's it. You also need CodeGraph CLI (`npm install -g @colbymchenry/codegraph`) and your project indexed (`codegraph init`).
+需要 CodeGraph CLI（`npm install -g @colbymchenry/codegraph`）和项目索引（`codegraph init`）。
 
 ---
 
@@ -67,12 +75,11 @@ No more zombies. No more "server disconnected".
 
 ## How It Works
 
-1. On `session_start`, checks `ctx.cwd/.codegraph/codegraph.db` exists
-2. Spawns `codegraph serve --mcp` with `cwd: projectRoot`
-3. Discovers available tools via MCP `tools/list`
-4. Registers all tools with `pi.registerTool()`
-5. Injects usage instructions into system prompt via `before_agent_start`
-6. On `session_shutdown` or process exit, cleans up all MCP clients
+1. `session_start` 时检查 `ctx.cwd/.codegraph/codegraph.db` 是否存在（瞬时操作）
+2. 首次调用 codegraph 工具时后台启动 `codegraph serve --mcp`（懒加载，不阻塞 session）
+3. 工具就绪后通过 `pi.registerTool()` 动态注册所有 MCP 工具
+4. 注册完成后通过 `before_agent_start` 注入 CodeGraph 使用说明
+5. `session_shutdown` 或进程退出时清理所有 MCP 客户端
 
 ## Credits
 
