@@ -1,6 +1,6 @@
 {
   "name": "pi-codegraph-fix",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Pi coding agent extension that wires codegraph as an MCP sidecar — with ctx.cwd fix for cross-project sessions",
   "keywords": [
     "pi-package",
