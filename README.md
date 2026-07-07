@@ -10,11 +10,11 @@ The CodeGraph plugin for pi that actually works.
 
 ## Features
 
-- **Cross-project** — uses `ctx.cwd` instead of `process.cwd()`, works when switching projects or launching pi from anywhere
-- **No zombie processes** — triple cleanup on session shutdown, process exit, and SIGTERM/SIGHUP
-- **Lazy startup** — codegraph process spawns on first use, doesn't block session start
-- **Multi-project** — one MCP client per CWD, auto-switches between projects
-- **Smart prompt injection** — only injects CodeGraph usage into system prompt after tools are ready, no misleading hints when there's no index
+- **Switch projects freely** — uses `ctx.cwd` instead of `process.cwd()`, no more silent tool loss when you change projects
+- **Zero zombie processes** — cleanup on session shutdown, process exit, and SIGTERM/SIGHUP. No more pile-up
+- **Lazy start** — spawns codegraph only when you first use it, doesn't slow down session launch
+- **Multi-project friendly** — each project gets its own MCP client, switches automatically
+- **No misleading hints** — injects CodeGraph instructions only when tools are actually ready
 
 ## Quick Install
 
