@@ -201,55 +201,68 @@ function ensureCleanup(clients: Map<string, McpClient>): void {
 export default function (pi: ExtensionAPI) {
   // Map of project root → MCP client (supports multi-project sessions)
   const clients = new Map<string, McpClient>();
+  let projectReady = false;
 
   pi.on("session_start", async (_event, ctx) => {
     const projectRoot = ctx.cwd || process.cwd();
     const dbPath = join(projectRoot, ".codegraph", "codegraph.db");
-    if (!existsSync(dbPath)) return; // ponytail: no index → no tools
 
-    // Already connected for this project
-    if (clients.has(projectRoot)) return;
+    // Reset for each new session
+    projectReady = false;
+
+    if (!existsSync(dbPath)) return; // no index → no tools
+
+    // Already connected for this project — mark ready and skip
+    if (clients.has(projectRoot)) {
+      projectReady = true;
+      return;
+    }
 
     const client = new McpClient();
-    try {
-      await client.start(projectRoot);
-    } catch {
-      return; // MCP handshake failed — silently skip
-    }
-    clients.set(projectRoot, client);
-    ensureCleanup(clients);
 
-    // Discover all codegraph MCP tools dynamically
-    const tools = await client.listTools();
-    for (const tool of tools) {
-      pi.registerTool({
-        name: tool.name,
-        label: tool.name.replace(/^codegraph_/, "").replace(/_/g, " "),
-        description: tool.description,
-        parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema as Record<string, unknown>),
-        execute: async (_id, params) => {
-          try {
-            const text = await client.call("tools/call", {
-              name: tool.name,
-              arguments: params,
-            });
-            const content = typeof text === "string" ? text : JSON.stringify(text, null, 2);
-            return { content: [{ type: "text" as const, text: content }], details: {} };
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            return { content: [{ type: "text" as const, text: `codegraph error: ${msg}` }], details: {}, isError: true };
-          }
-        },
-      });
-    }
+    // Fire-and-forget: lazy connect — don't block session_start
+    client.start(projectRoot).then(async () => {
+      clients.set(projectRoot, client);
+      ensureCleanup(clients);
+
+      // Discover all codegraph MCP tools dynamically
+      const tools = await client.listTools();
+      for (const tool of tools) {
+        pi.registerTool({
+          name: tool.name,
+          label: tool.name.replace(/^codegraph_/, "").replace(/_/g, " "),
+          description: tool.description,
+          parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema as Record<string, unknown>),
+          execute: async (_id, params) => {
+            try {
+              const text = await client.call("tools/call", {
+                name: tool.name,
+                arguments: params,
+              });
+              const content = typeof text === "string" ? text : JSON.stringify(text, null, 2);
+              return { content: [{ type: "text" as const, text: content }], details: {} };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              return { content: [{ type: "text" as const, text: `codegraph error: ${msg}` }], details: {}, isError: true };
+            }
+          },
+        });
+      }
+
+      projectReady = true;
+    }).catch(() => {
+      // MCP handshake failed — silently skip (no tools, no prompt injection)
+    });
   });
 
   pi.on("session_shutdown", () => {
     for (const c of clients.values()) c.destroy();
     clients.clear();
+    projectReady = false;
   });
 
   pi.on("before_agent_start", (event) => {
+    if (!projectReady) return;
     return { systemPrompt: event.systemPrompt + SYSTEM_PROMPT_SECTION };
   });
 }
