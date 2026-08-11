@@ -12,7 +12,7 @@ The CodeGraph plugin for pi that actually works.
 
 - **Switch projects freely** — uses `ctx.cwd` instead of `process.cwd()`, no more silent tool loss when you change projects
 - **Zero zombie processes** — cleanup on session shutdown, process exit, and SIGTERM/SIGHUP. No more pile-up
-- **Lazy start** — spawns codegraph only when you first use it, doesn't slow down session launch
+- **Lazy start** — spawns codegraph only when you first call a codegraph tool, doesn't slow down session launch
 - **Multi-project friendly** — each project gets its own MCP client, switches automatically
 - **No misleading hints** — injects CodeGraph instructions only when tools are actually ready
 
@@ -59,9 +59,9 @@ No more zombies. No more "server disconnected".
 ## How It Works
 
 1. On `session_start`, check if `ctx.cwd/.codegraph/codegraph.db` exists (instant file check)
-2. On first codegraph tool call, spawn `codegraph serve --mcp` in background (lazy, doesn't block session)
+2. Register known codegraph tool shells; the `codegraph serve --mcp` process is spawned in the background on the first tool call
 3. Discover available tools via MCP `tools/list` protocol
-4. Register all tools with `pi.registerTool()`
+4. Register all tools with `pi.registerTool()` (real schemas replace the shells)
 5. Inject usage instructions into system prompt via `before_agent_start` after tools are ready
 6. On `session_shutdown` or process exit, clean up all MCP clients
 

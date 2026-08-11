@@ -20,6 +20,29 @@ import { Type } from "typebox";
 // ── Constants ──────────────────────────────────────────────────────────
 
 const TIMEOUT_MS = 60_000;
+
+// Tools known to exist on the codegraph MCP server. These are registered as
+// shells at session_start (schema unknown until handshake), and the real
+// tool definitions replace them on the first call.
+const STUB_TOOL_NAMES = [
+  "codegraph_explore",
+  "codegraph_search",
+  "codegraph_node",
+  "codegraph_callers",
+  "codegraph_callees",
+  "codegraph_impact",
+  "codegraph_context",
+  "codegraph_files",
+] as const;
+
+// Permissive schema for stub tools — lets the LLM pass any arguments through
+// to the server before the real schema is discovered.
+const STUB_SCHEMA = Type.Unsafe<Record<string, unknown>>({
+  type: "object",
+  properties: {},
+  additionalProperties: true,
+});
+
 const SYSTEM_PROMPT_SECTION = `
 ## CodeGraph
 
@@ -201,68 +224,130 @@ function ensureCleanup(clients: Map<string, McpClient>): void {
 export default function (pi: ExtensionAPI) {
   // Map of project root → MCP client (supports multi-project sessions)
   const clients = new Map<string, McpClient>();
-  let projectReady = false;
+  const clientPromises = new Map<string, Promise<McpClient>>();
+  const toolEnsurePromises = new Map<string, Promise<void>>();
+  let toolsAvailable = false;
+
+  // Get (or lazily create) the MCP client for a project. The promise is
+  // cached so concurrent first calls spawn the process only once.
+  const getClient = (projectRoot: string): Promise<McpClient> => {
+    const existing = clientPromises.get(projectRoot);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      const client = new McpClient();
+      try {
+        await client.start(projectRoot);
+      } catch (err) {
+        client.destroy();
+        throw err;
+      }
+      clients.set(projectRoot, client);
+      ensureCleanup(clients);
+      return client;
+    })().catch((err) => {
+      // Drop failed entries so a later call can retry
+      clientPromises.delete(projectRoot);
+      toolEnsurePromises.delete(projectRoot);
+      throw err;
+    });
+
+    clientPromises.set(projectRoot, promise);
+    return promise;
+  };
+
+  // Ensure the client is connected and all real codegraph tools are
+  // registered. Idempotent: concurrent callers share one promise.
+  const ensureTools = (projectRoot: string): Promise<void> => {
+    const existing = toolEnsurePromises.get(projectRoot);
+    if (existing) return existing;
+
+    const promise = getClient(projectRoot)
+      .then(async (client) => {
+        // Discover all codegraph MCP tools dynamically (replaces stub shells)
+        const tools = await client.listTools();
+        for (const tool of tools) {
+          pi.registerTool({
+            name: tool.name,
+            label: tool.name.replace(/^codegraph_/, "").replace(/_/g, " "),
+            description: tool.description,
+            parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema as Record<string, unknown>),
+            execute: async (_id, params) => callCodegraph(projectRoot, tool.name, params),
+          });
+        }
+        toolsAvailable = true;
+      })
+      .catch((err) => {
+        toolEnsurePromises.delete(projectRoot);
+        throw err;
+      });
+
+    toolEnsurePromises.set(projectRoot, promise);
+    return promise;
+  };
+
+  // Shared tool body: lazily connect if needed, then forward the call.
+  const callCodegraph = async (projectRoot: string, name: string, params: Record<string, unknown>) => {
+    try {
+      await ensureTools(projectRoot);
+      const client = clients.get(projectRoot);
+      if (!client) throw new Error("codegraph client not available");
+      const text = await client.call("tools/call", { name, arguments: params });
+      const content = typeof text === "string" ? text : JSON.stringify(text, null, 2);
+      return { content: [{ type: "text" as const, text: content }], details: {} };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: "text" as const, text: `codegraph error: ${msg}` }], details: {}, isError: true };
+    }
+  };
+
+  // Register known tool shells without spawning. The first call through a
+  // shell triggers the real connection (see callCodegraph).
+  const registerStubTools = (projectRoot: string) => {
+    for (const name of STUB_TOOL_NAMES) {
+      pi.registerTool({
+        name,
+        label: name.replace(/^codegraph_/, "").replace(/_/g, " "),
+        description:
+          `CodeGraph tool (lazy): the first call connects to this project's codegraph MCP server, then runs \`${name}\`. ` +
+          "Arguments pass through to the codegraph server (e.g. query, paths, depth).",
+        parameters: STUB_SCHEMA,
+        execute: async (_id, params) => callCodegraph(projectRoot, name, params),
+      });
+    }
+    toolsAvailable = true;
+  };
 
   pi.on("session_start", async (_event, ctx) => {
     const projectRoot = ctx.cwd || process.cwd();
     const dbPath = join(projectRoot, ".codegraph", "codegraph.db");
 
     // Reset for each new session
-    projectReady = false;
+    toolsAvailable = false;
 
     if (!existsSync(dbPath)) return; // no index → no tools
 
     // Already connected for this project — mark ready and skip
     if (clients.has(projectRoot)) {
-      projectReady = true;
+      toolsAvailable = true;
       return;
     }
 
-    const client = new McpClient();
-
-    // Fire-and-forget: lazy connect — don't block session_start
-    client.start(projectRoot).then(async () => {
-      clients.set(projectRoot, client);
-      ensureCleanup(clients);
-
-      // Discover all codegraph MCP tools dynamically
-      const tools = await client.listTools();
-      for (const tool of tools) {
-        pi.registerTool({
-          name: tool.name,
-          label: tool.name.replace(/^codegraph_/, "").replace(/_/g, " "),
-          description: tool.description,
-          parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema as Record<string, unknown>),
-          execute: async (_id, params) => {
-            try {
-              const text = await client.call("tools/call", {
-                name: tool.name,
-                arguments: params,
-              });
-              const content = typeof text === "string" ? text : JSON.stringify(text, null, 2);
-              return { content: [{ type: "text" as const, text: content }], details: {} };
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              return { content: [{ type: "text" as const, text: `codegraph error: ${msg}` }], details: {}, isError: true };
-            }
-          },
-        });
-      }
-
-      projectReady = true;
-    }).catch(() => {
-      // MCP handshake failed — silently skip (no tools, no prompt injection)
-    });
+    // True lazy load: only register tool shells here. The MCP process is
+    // spawned on the first tool call, not when the session starts.
+    registerStubTools(projectRoot);
   });
 
   pi.on("session_shutdown", () => {
     for (const c of clients.values()) c.destroy();
     clients.clear();
-    projectReady = false;
+    clientPromises.clear();
+    toolEnsurePromises.clear();
+    toolsAvailable = false;
   });
 
   pi.on("before_agent_start", (event) => {
-    if (!projectReady) return;
+    if (!toolsAvailable) return;
     return { systemPrompt: event.systemPrompt + SYSTEM_PROMPT_SECTION };
   });
 }
