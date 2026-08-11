@@ -24,16 +24,26 @@ const TIMEOUT_MS = 60_000;
 // Tools known to exist on the codegraph MCP server. These are registered as
 // shells at session_start (schema unknown until handshake), and the real
 // tool definitions replace them on the first call.
-const STUB_TOOL_NAMES = [
-  "codegraph_explore",
-  "codegraph_search",
-  "codegraph_node",
-  "codegraph_callers",
-  "codegraph_callees",
-  "codegraph_impact",
-  "codegraph_context",
-  "codegraph_files",
-] as const;
+//
+// `params` lists the real argument names per tool, verified against
+// `codegraph serve --mcp` v1.5: tools/list advertises only codegraph_explore;
+// the others are accepted by tools/call but not advertised, so their schemas
+// stay unknown until the handshake — these hints let the LLM make a correct
+// first call instead of guessing parameter names.
+//
+// Note: codegraph_context was removed from this list — the v1.5 server
+// rejects it with "Unknown tool" (the name only exists in the server as a
+// CLI stdout tag, not an MCP tool). No server version this extension spawns
+// implements it.
+const STUB_TOOLS: Array<{ name: string; params: string }> = [
+  { name: "codegraph_explore", params: "query (required); optional: maxFiles, projectPath" },
+  { name: "codegraph_search", params: "query (required)" },
+  { name: "codegraph_node", params: "symbol (required); file mode: file, offset, limit" },
+  { name: "codegraph_callers", params: "symbol (required)" },
+  { name: "codegraph_callees", params: "symbol (required)" },
+  { name: "codegraph_impact", params: "symbol (required)" },
+  { name: "codegraph_files", params: "(none — no required arguments)" },
+];
 
 // Permissive schema for stub tools — lets the LLM pass any arguments through
 // to the server before the real schema is discovered.
@@ -56,7 +66,7 @@ symbol, edge, and file. Prefer codegraph tools over Read/Grep for source code.
 | Exploring an area       | \`codegraph_explore\`                        |
 | Finding callers         | \`codegraph_callers\` / \`codegraph_callees\`  |
 | Impact analysis         | \`codegraph_impact\`                         |
-| File structure overview | \`codegraph_context\` / \`codegraph_files\`    |
+| File structure overview | \`codegraph_files\`                            |
 
 Use \`codegraph_explore\` first for almost any code question — it returns
 verbatim source + call paths in one call.
@@ -304,15 +314,16 @@ export default function (pi: ExtensionAPI) {
   // Register known tool shells without spawning. The first call through a
   // shell triggers the real connection (see callCodegraph).
   const registerStubTools = (projectRoot: string) => {
-    for (const name of STUB_TOOL_NAMES) {
+    for (const { name, params } of STUB_TOOLS) {
       pi.registerTool({
         name,
         label: name.replace(/^codegraph_/, "").replace(/_/g, " "),
         description:
           `CodeGraph tool (lazy): the first call connects to this project's codegraph MCP server, then runs \`${name}\`. ` +
-          "Arguments pass through to the codegraph server (e.g. query, paths, depth).",
+          `Accepted arguments: ${params}. ` +
+          "Extra arguments are passed through to the codegraph server.",
         parameters: STUB_SCHEMA,
-        execute: async (_id, params) => callCodegraph(projectRoot, name, params),
+        execute: async (_id, args) => callCodegraph(projectRoot, name, args),
       });
     }
     toolsAvailable = true;
